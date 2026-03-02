@@ -28,32 +28,29 @@ def send_telegram(message):
         print(f"전송 실패: {e}")
 
 def get_news():
-    """네이버 뉴스 수집 함수"""
-    query = "인공지능" # 원하는 키워드로 변경 가능
-    search_url = f"https://search.naver.com/search.naver?where=news&query={query}"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    query = "인공지능"
+    # 검색 결과가 '최신순'으로 나오도록 옵션(&sort=1)을 추가하면 더 정확합니다.
+    search_url = f"https://search.naver.com/search.naver?where=news&query={query}&sort=1"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
     
-    try:
-        response = requests.get(search_url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        articles = soup.select(".news_tit")
-        
-        if not articles:
-            print("수집된 기사가 없습니다.")
-            return
+    response = requests.get(search_url, headers=headers)
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-        msg = f"📢 <b>오늘의 [{query}] 뉴스</b>\n"
-        msg += "<i>3시간마다 자동으로 업데이트됩니다.</i>\n\n"
-        
-        for article in articles[:5]:
-            title = article.get_text()
-            link = article['href']
-            msg += f"• <b>{title}</b>\n<a href='{link}'>기사 읽기</a>\n\n"
-        
-        send_telegram(msg)
-        
-    except Exception as e:
-        print(f"크롤링 에러: {e}")
+    # 기사 제목을 잡는 선택자를 더 포괄적으로 변경 (.news_tit 대신 사용할 수 있는 것들)
+    articles = soup.select("a.news_tit")
+    
+    if not articles:
+        # 만약 검색 결과가 없으면 알림을 줍니다.
+        send_telegram(f"❗ [{query}] 관련 새로운 기사를 찾지 못했습니다.")
+        return
+
+    msg = f"📢 <b>오늘의 AI 뉴스</b>\n\n"
+    for article in articles[:5]:
+        title = article.get_text()
+        link = article['href']
+        msg += f"• {title}\n<a href='{link}'>바로가기</a>\n\n"
+    
+    send_telegram(msg)
 
 if __name__ == "__main__":
     get_news()

@@ -2,55 +2,46 @@ import os
 import requests
 from bs4 import BeautifulSoup
 
-# GitHub Secrets에 저장한 값을 시스템 환경변수에서 가져옵니다.
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 def send_telegram(message):
-    """텔레그램 메시지 전송 함수"""
-    if not BOT_TOKEN or not CHAT_ID:
-        print("에러: 텔레그램 토큰이나 채팅 ID가 설정되지 않았습니다.")
-        return
-
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    params = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False # 링크 미리보기 허용
-    }
-    
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        print("텔레그램 메시지 전송 성공!")
-    except Exception as e:
-        print(f"전송 실패: {e}")
+    # HTML 모드 대신 일반 텍스트 모드로 보내서 태그 에러를 방지합니다.
+    params = {"chat_id": CHAT_ID, "text": message}
+    requests.get(url, params=params)
 
 def get_news():
     query = "인공지능"
-    # 검색 결과가 '최신순'으로 나오도록 옵션(&sort=1)을 추가하면 더 정확합니다.
-    search_url = f"https://search.naver.com/search.naver?where=news&query={query}&sort=1"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+    # 검색 주소를 단순화하고 헤더를 강화합니다.
+    search_url = f"https://search.naver.com/search.naver?where=news&query={query}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     
-    response = requests.get(search_url, headers=headers)
-    soup = BeautifulSoup(response.text, 'html.parser')
+    try:
+        response = requests.get(search_url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 네이버 뉴스의 최신 제목 클래스인 'news_tit'를 찾습니다.
+        articles = soup.find_all('a', class_='news_tit')
+        
+        if not articles:
+            send_telegram("기사를 찾지 못했습니다. 구조가 바뀌었을 수 있습니다.")
+            return
 
-    # 기사 제목을 잡는 선택자를 더 포괄적으로 변경 (.news_tit 대신 사용할 수 있는 것들)
-    articles = soup.select("a.news_tit")
-    
-    if not articles:
-        # 만약 검색 결과가 없으면 알림을 줍니다.
-        send_telegram(f"❗ [{query}] 관련 새로운 기사를 찾지 못했습니다.")
-        return
-
-    msg = f"📢 <b>오늘의 AI 뉴스</b>\n\n"
-    for article in articles[:5]:
-        title = article.get_text()
-        link = article['href']
-        msg += f"• {title}\n<a href='{link}'>바로가기</a>\n\n"
-    
-    send_telegram(msg)
+        # 결과물 조립 (HTML 태그 없이 깔끔하게 텍스트로만 구성)
+        msg = f"📢 오늘의 [{query}] 뉴스\n\n"
+        
+        for i, article in enumerate(articles[:5], 1):
+            title = article.get_text(strip=True)
+            link = article['href']
+            msg += f"{i}. {title}\n링크: {link}\n\n"
+        
+        # 최종 전송
+        print(f"전송할 메시지 내용:\n{msg}") # 로그 확인용
+        send_telegram(msg)
+        
+    except Exception as e:
+        send_telegram(f"실행 중 에러 발생: {str(e)}")
 
 if __name__ == "__main__":
     get_news()

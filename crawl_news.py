@@ -2,52 +2,57 @@ import os
 import requests
 from bs4 import BeautifulSoup
 
-# 1. 환경변수 읽기
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    params = {"chat_id": CHAT_ID, "text": message}
+    # 메시지가 너무 길면 잘릴 수 있으니 안전하게 전송
+    params = {"chat_id": CHAT_ID, "text": message[:4000]} 
     requests.get(url, params=params)
 
 def get_news():
     query = "인공지능"
-    # [수정] 네이버 뉴스 검색 URL을 더 구체적으로 변경
-    search_url = f"https://search.naver.com/search.naver?where=news&query={query}&sm=tab_pge&sort=0"
+    # 주소를 모바일 버전(m.search.naver.com)으로 바꿉니다. 모바일 버전이 구조가 단순해서 차단이 덜합니다!
+    search_url = f"https://m.search.naver.com/search.naver?where=m_news&query={query}&sm=mtb_pge&sort=0"
     
-    # [핵심] 네이버가 로봇으로 인식하지 못하게 '진짜 브라우저'처럼 위장하는 정보
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1"
     }
     
     try:
         response = requests.get(search_url, headers=headers)
-        # 응답이 정상인지 확인 (200이 아니면 에러)
-        if response.status_code != 200:
-            send_telegram(f"❌ 네이버 접속 실패 (코드: {response.status_code})")
-            return
-
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # [수정] 네이버 뉴스 제목을 찾는 가장 정확한 경로
-        articles = soup.select("a.news_tit")
+        # [갈고리 1] 모바일 네이버 뉴스 제목 클래스
+        articles = soup.select(".news_tit") 
         
+        # [갈고리 2] 만약 위에서 못 찾으면 다른 클래스도 시도
         if not articles:
-            # 하나도 못 찾았다면, 받아온 본문 중 일부를 로그로 출력 (디버깅용)
-            print(f"응답 본문 길이: {len(response.text)}")
-            send_telegram("❌ 뉴스를 찾지 못했습니다. 구조 확인이 필요합니다.")
+            articles = soup.select(".tit_main")
+            
+        # [갈고리 3] 이것도 안 되면 모든 <a> 태그 중 제목 같은 걸 다 뒤짐
+        if not articles:
+            articles = [a for a in soup.find_all('a') if 'news_tit' in a.get('class', [])]
+
+        if not articles:
+            send_telegram("❌ 여전히 기사를 찾지 못했습니다. 네이버가 강하게 막고 있네요.")
             return
 
         msg = f"📢 오늘의 [{query}] 뉴스\n"
-        msg += "━━━━━━━━━━━━━━━━━━\n"
+        msg += "━━━━━━━━━━━━━━━━━━\n\n"
         
-        for i, article in enumerate(articles[:5], 1):
+        count = 0
+        for article in articles:
             title = article.get_text(strip=True)
-            link = article['href']
-            msg += f"{i}. {title}\n🔗 {link}\n\n"
+            link = article.get('href', '#')
+            
+            if title and link.startswith("http"):
+                msg += f"{count+1}. {title}\n🔗 {link}\n\n"
+                count += 1
+            
+            if count >= 5: # 5개만 채우면 중단
+                break
         
         send_telegram(msg)
         

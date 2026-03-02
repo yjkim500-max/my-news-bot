@@ -13,30 +13,29 @@ def send_telegram(message):
 
 def get_news():
     query = "인공지능"
-    # 주소를 모바일 버전(m.search.naver.com)으로 바꿉니다. 모바일 버전이 구조가 단순해서 차단이 덜합니다!
-    search_url = f"https://m.search.naver.com/search.naver?where=m_news&query={query}&sm=mtb_pge&sort=0"
+    # PC 버전 주소로 변경: PC 버전이 뉴스 제목(.news_tit)을 추출하기 가장 안정적입니다.
+    search_url = f"https://search.naver.com/search.naver?where=news&query={query}"
     
+    # [핵심 수정] 봇 차단을 피하기 위해 헤더 정보를 꼼꼼하게 일반 크롬 브라우저처럼 위장합니다.
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://www.naver.com/"
     }
     
     try:
         response = requests.get(search_url, headers=headers)
+        response.raise_for_status() # HTTP 통신 에러가 나면 바로 except로 빠지게 함
+        
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # [갈고리 1] 모바일 네이버 뉴스 제목 클래스
+        # PC 네이버 뉴스 검색 결과의 제목 클래스는 보통 'news_tit' 입니다.
         articles = soup.select(".news_tit") 
         
-        # [갈고리 2] 만약 위에서 못 찾으면 다른 클래스도 시도
+        # 기사를 아예 찾지 못했을 경우
         if not articles:
-            articles = soup.select(".tit_main")
-            
-        # [갈고리 3] 이것도 안 되면 모든 <a> 태그 중 제목 같은 걸 다 뒤짐
-        if not articles:
-            articles = [a for a in soup.find_all('a') if 'news_tit' in a.get('class', [])]
-
-        if not articles:
-            send_telegram("❌ 여전히 기사를 찾지 못했습니다. 네이버가 강하게 막고 있네요.")
+            send_telegram("❌ 기사를 찾지 못했습니다. (네이버 봇 차단 또는 검색결과 없음)")
             return
 
         msg = f"📢 오늘의 [{query}] 뉴스\n"
@@ -44,7 +43,11 @@ def get_news():
         
         count = 0
         for article in articles:
+            # 텍스트 추출 시도, 없으면 title 속성에서 추출
             title = article.get_text(strip=True)
+            if not title and article.has_attr('title'):
+                title = article['title']
+                
             link = article.get('href', '#')
             
             if title and link.startswith("http"):
@@ -54,6 +57,10 @@ def get_news():
             if count >= 5: # 5개만 채우면 중단
                 break
         
+        if count == 0:
+            send_telegram("❌ 기사 요소를 찾았으나 제목이나 링크를 파싱하지 못했습니다.")
+            return
+
         send_telegram(msg)
         
     except Exception as e:
